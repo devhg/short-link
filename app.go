@@ -59,18 +59,42 @@ func (a *App) createShortlink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.Body.Close()
-	fmt.Printf("%v", req)
+
+	fmt.Printf("%#v\n", req)
+
+	shortenURL, err := a.config.s.Shorten(req.URL, req.ExpirationInMinutes)
+	if err != nil {
+		respondWithError(w, err)
+	} else {
+		respondWithJSON(w, http.StatusOK, shortlinkResp{Shortlink: shortenURL})
+	}
 }
 
 func (a *App) getShortlinkInfo(w http.ResponseWriter, r *http.Request) {
 	values := r.URL.Query()
-	fmt.Println(values)
+	shortenURL := values.Get("shortlink")
+
+	shortlinkInfo, err := a.config.s.ShortlinkInfo(shortenURL)
+	if err != nil {
+		respondWithError(w, err)
+	} else {
+		respondWithJSON(w, http.StatusOK, shortlinkInfo)
+	}
 }
 
 func (a *App) redirect(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	fmt.Println(vars)
-	fmt.Printf("%s\n", vars["shortlink"])
+
+	fmt.Printf("shortlink=%s\n", vars["shortlink"])
+
+	shortenURL := vars["shortlink"]
+	URL, err := a.config.s.Unshorten(shortenURL)
+	if err != nil {
+		respondWithError(w, err)
+	} else {
+		// 零时重定向
+		http.Redirect(w, r, URL, http.StatusTemporaryRedirect)
+	}
 }
 
 func respondWithError(w http.ResponseWriter, err error) {

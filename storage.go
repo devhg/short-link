@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha1"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/go-redis/redis"
 	"github.com/mattheath/base62"
@@ -17,12 +19,30 @@ type Storage interface {
 const (
 	UrlIDkey           = "next.url.id"
 	ShortlinkKey       = "shortlink:%s:url"
-	UrlHashKey         = "urlhash:%s:shortlinkzL"
+	UrlHashKey         = "urlhash:%s:shortlink"
 	ShortlinkDetailKey = "shortlink:%s:detail"
 )
 
+type URLDetail struct {
+	URL                 string        `json:"url"`
+	CreatedAt           string        `json:"created_at"`
+	ExpirationInMinutes time.Duration `json:"expiration_in_minutes"`
+}
+
 type RedisClient struct {
 	Client *redis.Client
+}
+
+func NewRedisClient(addr, pwd string, db int) *RedisClient {
+	c := redis.NewClient(&redis.Options{
+		Addr:     addr,
+		Password: pwd,
+		DB:       db,
+	})
+	if _, err := c.Ping().Result(); err != nil {
+		panic(err)
+	}
+	return &RedisClient{Client: c}
 }
 
 func (r *RedisClient) Shorten(url string, exp int64) (string, error) {
@@ -56,13 +76,13 @@ func (r *RedisClient) Shorten(url string, exp int64) (string, error) {
 	eid := base62.EncodeInt64(id)
 
 	//store the url against the eid
-	err = r.Client.Set(fmt.Sprintf(ShortlinkKey, eid), url, time.Second*time.Duration(exp)).Err()
+	err = r.Client.Set(fmt.Sprintf(ShortlinkKey, eid), url, time.Minute*time.Duration(exp)).Err()
 	if err != nil {
 		return "", err
 	}
 
 	//store the url against the hash of it
-	err = r.Client.Set(fmt.Sprintf(UrlHashKey, h), eid, time.Second*time.Duration(exp)).Err()
+	err = r.Client.Set(fmt.Sprintf(UrlHashKey, h), eid, time.Minute*time.Duration(exp)).Err()
 	if err != nil {
 		return "", err
 	}
@@ -77,7 +97,7 @@ func (r *RedisClient) Shorten(url string, exp int64) (string, error) {
 	}
 
 	//store the url detail against the eid
-	err = r.Client.Set(fmt.Sprintf(ShortlinkDetailKey, eid), detail, time.Second*time.Duration(exp)).Err()
+	err = r.Client.Set(fmt.Sprintf(ShortlinkDetailKey, eid), detail, time.Minute*time.Duration(exp)).Err()
 	if err != nil {
 		return "", err
 	}
@@ -85,31 +105,31 @@ func (r *RedisClient) Shorten(url string, exp int64) (string, error) {
 }
 
 func (r *RedisClient) ShortlinkInfo(eid string) (interface{}, error) {
-	panic("implement me")
+	result, err := r.Client.Get(fmt.Sprintf(ShortlinkDetailKey, eid)).Result()
+	if err == redis.Nil {
+		return "", StatusError{Code: 404, Err: errors.New("Unknown short URL")}
+	} else if err != nil {
+		return "", err
+	} else {
+		return result, nil
+	}
 }
 
 func (r *RedisClient) Unshorten(eid string) (string, error) {
-	panic("implement me")
-}
-
-type URLDetail struct {
-	URL                 string        `json:"url"`
-	CreatedAt           string        `json:"created_at"`
-	ExpirationInMinutes time.Duration `json:"expiration_in_minutes"`
-}
-
-func NewRedisClient(addr, pwd string, db int) *RedisClient {
-	c := redis.NewClient(&redis.Options{
-		Addr:     addr,
-		Password: pwd,
-		DB:       db,
-	})
-	if _, err := c.Ping().Result(); err != nil {
-		panic(err)
+	result, err := r.Client.Get(fmt.Sprintf(ShortlinkKey, eid)).Result()
+	if err == redis.Nil {
+		return "", StatusError{Code: 404, Err: err}
+	} else if err != nil {
+		return "", err
+	} else {
+		return result, nil
 	}
-	return &RedisClient{Client: c}
 }
 
 func toSha1(url string) string {
-
+	hash := sha1.New()
+	hash.Write([]byte(url))
+	bs := hash.Sum(nil)
+	//SHA1 值经常以 16 进制输出，例如在 git commit 中。使用%x 来将散列结果格式化为 16 进制字符串。
+	return fmt.Sprintf("%x\n", bs)
 }
