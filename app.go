@@ -22,7 +22,7 @@ func (a *App) Initialize(e *Env) {
 	a.initializeRoutes()
 }
 
-//初始化路由
+// init a route
 func (a *App) initializeRoutes() {
 	a.Router.HandleFunc("/api/shorten", a.createShortlink).Methods("POST")
 	log.Println("POST /api/shorten")
@@ -33,6 +33,7 @@ func (a *App) initializeRoutes() {
 }
 
 func (a *App) Run(addr string) {
+	log.Printf("RUN at [%s]", addr)
 	log.Fatal(http.ListenAndServe(addr, a.Router))
 }
 

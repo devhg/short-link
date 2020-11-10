@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/mattheath/base62"
+	"github.com/QXQZX/short-link/base62"
 	"testing"
 )
 

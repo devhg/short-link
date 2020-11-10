@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/QXQZX/short-link/base62"
 	"github.com/go-redis/redis"
-	"github.com/mattheath/base62"
 	"time"
 )
 
@@ -49,6 +49,7 @@ func (r *RedisClient) Shorten(url string, exp int64) (string, error) {
 	//convert url to sha1 hash
 	h := toSha1(url)
 
+	// select shortlink by hash(url)
 	result, err := r.Client.Get(fmt.Sprintf(UrlHashKey, h)).Result()
 	if err == redis.Nil {
 		// not existed
@@ -56,7 +57,7 @@ func (r *RedisClient) Shorten(url string, exp int64) (string, error) {
 		return "", err
 	} else {
 		if result == "{}" {
-			// expiration, return {}， nothing to do
+			// expiration, return {}, nothing to do
 		} else {
 			return result, nil
 		}
@@ -68,20 +69,20 @@ func (r *RedisClient) Shorten(url string, exp int64) (string, error) {
 		return "", err
 	}
 
-	//encode global counter to base62
+	// get then encode global counter to base62
 	id, err := r.Client.Get(UrlIDkey).Int64()
 	if err != nil {
 		return "", err
 	}
 	eid := base62.EncodeInt64(id)
 
-	//store the url against the eid
+	// store the url against the eid
 	err = r.Client.Set(fmt.Sprintf(ShortlinkKey, eid), url, time.Minute*time.Duration(exp)).Err()
 	if err != nil {
 		return "", err
 	}
 
-	//store the url against the hash of it
+	// store the shortlink against the hash(url)
 	err = r.Client.Set(fmt.Sprintf(UrlHashKey, h), eid, time.Minute*time.Duration(exp)).Err()
 	if err != nil {
 		return "", err
@@ -90,13 +91,13 @@ func (r *RedisClient) Shorten(url string, exp int64) (string, error) {
 	detail, err := json.Marshal(&URLDetail{
 		URL:                 url,
 		CreatedAt:           time.Now().String(),
-		ExpirationInMinutes: time.Minute * time.Duration(exp),
+		ExpirationInMinutes: time.Duration(exp),
 	})
 	if err != nil {
 		return "", err
 	}
 
-	//store the url detail against the eid
+	// store the url detail against the eid
 	err = r.Client.Set(fmt.Sprintf(ShortlinkDetailKey, eid), detail, time.Minute*time.Duration(exp)).Err()
 	if err != nil {
 		return "", err
@@ -111,7 +112,12 @@ func (r *RedisClient) ShortlinkInfo(eid string) (interface{}, error) {
 	} else if err != nil {
 		return "", err
 	} else {
-		return result, nil
+		var URLdetail = URLDetail{}
+		err := json.Unmarshal([]byte(result), &URLdetail)
+		if err != nil {
+			return URLDetail{}, err
+		}
+		return URLdetail, nil
 	}
 }
 
